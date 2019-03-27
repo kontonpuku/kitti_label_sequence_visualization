@@ -1,0 +1,8 @@
+prefix=/home/curry/study/git_ws/kitti_label_sequence_visualization/install
+
+Name: viz_kitti
+Description: Description of viz_kitti
+Version: 0.0.0
+Cflags: 
+Libs: -L/home/curry/study/git_ws/kitti_label_sequence_visualization/install/lib 
+Requires: 
