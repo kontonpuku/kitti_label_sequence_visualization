@@ -1,2 +1,0 @@
-viz_kitti
--DCATKIN_DEVEL_PREFIX=/home/curry/study/git_ws/kitti_label_sequence_visualization/devel -DCMAKE_INSTALL_PREFIX=/home/curry/study/git_ws/kitti_label_sequence_visualization/install -G Unix Makefiles
