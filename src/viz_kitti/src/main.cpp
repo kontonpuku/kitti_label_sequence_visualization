@@ -26,11 +26,11 @@
 
 using namespace std;
 
-#define FRAME_PER_SEQ 120
-#define SEQ_NUM 2
-#define OBJ_TYPE_NUM 9
+#define FRAME_PER_SEQ 77
+#define SEQ_NUM 20
+#define OBJ_TYPE_NUM 10
 #define DATA_ITEM_LEN 17
-#define RATE 8
+#define RATE 2
 
 typedef pcl::PointXYZ PointT;
 typedef pcl::PointXYZI PointI;
@@ -102,13 +102,13 @@ void read_image(cv_bridge::CvImagePtr cvPtr,string& files_dir, string& file_name
 
 
 
-void load_seq_label_files(string files_dir, int seq_num, LabelSeq & seq){
+void load_seq_label_files(string files_dir, int seq_num, string label_folder, LabelSeq & seq){
     string tmp;
     stringstream ss;
     ss << std::right << std::setfill('0') << std::setw(4) <<seq_num<<endl;
     ss>>tmp; 
     seq.seq_id = tmp;
-    fstream infile(files_dir+"label_2/"+tmp+".txt");
+    fstream infile(files_dir+label_folder+tmp+".txt");
     int frame_id=0;  int pre_frame_id=0;
     string line;
     LabelFrame fl;
@@ -116,18 +116,22 @@ void load_seq_label_files(string files_dir, int seq_num, LabelSeq & seq){
         stringstream ss1;
         ss1 << line;   ss1 >> frame_id;
         if(frame_id!=pre_frame_id){
+            for(int i=0; i<frame_id-pre_frame_id-1; i++){
+                LabelFrame tmp;
+                seq.seq_data.push_back(tmp);
+            }
             seq.seq_data.push_back(fl);
             pre_frame_id = frame_id;
             fl.frame_id = frame_id;
             fl.fra_data.clear();  
         }
-        fl.fra_data.push_back(line);        
+        fl.fra_data.push_back(line);
+
     }
 }
 
 
-//0 0 Van 0 0 -1.793451 296.744956 161.752147 455.226042 292.372804 2.000000 1.823255 4.433886 
-//-4.552284 1.858523 13.410495 -2.115488
+
 bool frame_data_str_parser(string & data, PosPose & pos_pose){
     stringstream ss;
     ss << data;
@@ -308,7 +312,7 @@ void generate_text_marker(PosPose &pp, visualization_msgs::Marker & marker, ros:
 
 
 void generate_3dBoundingBox_markers(visualization_msgs::MarkerArray & bbox_markers, LabelFrame & objs, 
-    Calibration & calib , cv_bridge::CvImagePtr & img_ptr, ros::Time now){
+    Calibration & calib , cv_bridge::CvImagePtr & img_ptr, ros::Time now, LabelFrame & objs_test){
     int objs_num = objs.fra_data.size();
     for(int i=0; i<objs_num; i++){
         string data = (objs.fra_data)[i];
@@ -332,14 +336,55 @@ void generate_3dBoundingBox_markers(visualization_msgs::MarkerArray & bbox_marke
         generate_text_marker(pp,marker,now,corners_3d);
         marker.id = pp.track_id+objs_num;
         marker.lifetime = ros::Duration(1.0/RATE);
+        marker.color.r = 0.0f;
+        marker.color.g = 1.0f;
+        marker.color.b = 0.0f;
+        marker.color.a = 1.0;
         bbox_markers.markers.push_back(marker);
 
         //generate 2d image bounding boxes
         Eigen::MatrixXf corners_2d = calib.project_rect_to_image(corners_cam);
         create_2dbox_mesh(corners_2d, img_ptr, box_color[object_map[pp.type]]);
-        
+    }
+
+
+    //for test objects
+    int objs_num_test = objs_test.fra_data.size();
+    for(int i=0; i<objs_num_test; i++){
+        string data = (objs_test.fra_data)[i];
+        PosPose pp;
+        bool is_valid = frame_data_str_parser(data,pp);
+        if(!is_valid) continue;
+        Eigen::MatrixXf corners_cam = compute_3d_box_corners(pp);
+        Eigen::MatrixXf corners_3d = calib.project_rect_to_velo(corners_cam);
+        //generate 3d bounding boxes (test_label)
+        visualization_msgs::Marker marker;
+        generate_line_marker(corners_3d, marker,box_color[object_map[pp.type]]);
+        marker.header.stamp = now;
+        marker.id = pp.track_id+objs_num*2;
+        marker.lifetime = ros::Duration(1.0/RATE);
+        marker.text = pp.type;
+        marker.color.r = 1.0f;
+        marker.color.g = 0.0f;
+        marker.color.b = 0.0f;
+        marker.color.a = 1.0;
+        bbox_markers.markers.push_back(marker);
+
+
+        //genetate text markers for 3d bounding boxes(test_label)
+        generate_text_marker(pp,marker,now,corners_3d);
+        marker.id = pp.track_id+objs_num*3;
+        marker.lifetime = ros::Duration(1.0/RATE);
+        bbox_markers.markers.push_back(marker);
+
+        //generate 2d image bounding boxes(test_label)
+        Eigen::MatrixXf corners_2d = calib.project_rect_to_image(corners_cam);
+        create_2dbox_mesh(corners_2d, img_ptr, box_color[object_map["test_label"]]);
     }
 }
+
+
+
 
 
 void init_box_color(){
@@ -352,6 +397,7 @@ void init_box_color(){
     box_color[object_map["Person_sitting"]].assign(75.0/255,0.0,130.0/255);   //purple   75,0,130    
     box_color[object_map["Misc"]].assign(128.0/255.0,128.0/255.0,128.0/255.0);  //Maroon 128 0 0
     box_color[object_map["Tram"]].assign(1.0,140.0/255.0, 0.0);  //Orange 255,140,0
+    box_color[object_map["test_label"]].assign(1.0,0.0,0.0);
     
 }
 
@@ -362,6 +408,15 @@ void test(){
     cout<<object_map["Truck"]<<endl;
 }
 
+
+void generate_file_name(string * st1, string * st2){
+    stringstream ss;
+    for(int i=0; i<SEQ_NUM; i++){
+        ss << std::setfill('0')<<std::setw(4)<<i<<endl;
+        ss >> st1[i];
+        st2[i] = st1[i] + '/';
+    }
+}
 
 
 int main(int argc, char** argv){
@@ -381,10 +436,13 @@ int main(int argc, char** argv){
     sensor_msgs::Image sImg;
 
     // string files_dir = "/home/curry/study/kitti_data/Kitti/tracking/training/";
-    string files_dir = "/home/curry/study/kitti_data/long_track_data/";
-    string data_type [] = {"velodyne/", "image_2/"};
-    string sequences [] = {"0000/","0001/"};
-    string seq_label [] = {"0000", "0001"};
+    string files_dir = "/home/curry/study/researches/kitti_tracking/training/";
+    string data_type [] = {"velodyne/", "image_2/","image_2_2/"};
+
+    string sequences[21];
+    string seq_label[21];
+    generate_file_name(seq_label,sequences);
+
     
     
     //************fixed frame**************s*****//
@@ -407,13 +465,16 @@ int main(int argc, char** argv){
 
     //****************load labels*************************//
     LabelSeq label_seq[SEQ_NUM];
+    LabelSeq label_seq_test[SEQ_NUM];
+    string label_folder_name [] = {"label_2/","label_2_2/"};
     for(int i=0;i<SEQ_NUM;i++){
-        load_seq_label_files(files_dir,i,label_seq[i]);
+        load_seq_label_files(files_dir,i,label_folder_name[0],label_seq[i]);
+        load_seq_label_files(files_dir,i,label_folder_name[1],label_seq_test[i]);
     }
     
-    //*************objects map***************************//
+    //*************objects map********************* ******//
     map<string,int> obj_map;
-    string objs[]= {"Car", "Van","Truck","Pedestrian","Person_sitting","Cyclist","Tram","Misc","DontCare"};
+    string objs[]= {"Car", "Van","Truck","Pedestrian","Person_sitting","Cyclist","Tram","Misc","DontCare","test_label"};
     for(int i=0;i<OBJ_TYPE_NUM;i++){
         obj_map.insert(std::pair<string,int>(objs[i],i));
     }
@@ -429,7 +490,7 @@ int main(int argc, char** argv){
 
 
     //***********************Load Calibration******************//
-    string cal_filepath = "/home/curry/study/kitti_data/Kitti/tracking/training/calib/0000.txt";
+    string cal_filepath = "/home/curry/study/researches/kitti_tracking/training/calib/0000.txt";
     Calibration calib(cal_filepath);
 
 
@@ -438,7 +499,15 @@ int main(int argc, char** argv){
     //**************************TEST AREA************************//
     cout<<"*****************THIS IS TEST RESULT**********************"<<endl;
 
-
+    cout<<"----------------"<<endl;
+    for(int i=0; i<SEQ_NUM; i++){
+        cout<<label_seq_test[i].seq_data.size()<<endl;
+    }
+    cout<<"----------------"<<endl;
+    for(int i=0; i<SEQ_NUM; i++){
+        cout<<label_seq[i].seq_data.size()<<endl;
+    }
+    
 
 
     //**************************END TEST************************//
@@ -465,7 +534,8 @@ int main(int argc, char** argv){
         sensor_msgs::Image sImg_2d_boxes(sImg);
         visualization_msgs::MarkerArray bbox_markers;
         cv_ptr_box->image = cv_ptr->image;
-        generate_3dBoundingBox_markers(bbox_markers, label_seq[seq_id].seq_data[frame_id],calib,cv_ptr_box,now);
+        generate_3dBoundingBox_markers(bbox_markers, label_seq[seq_id].seq_data[frame_id],
+            calib,cv_ptr_box,now,label_seq_test[seq_id].seq_data[frame_id]);
         cv_ptr_box->encoding = sensor_msgs::image_encodings::BGR8;
         cv_ptr_box->toImageMsg(sImg_2d_boxes);
         sImg_2d_boxes.header.stamp = now;
@@ -483,7 +553,7 @@ int main(int argc, char** argv){
         frame_id++;
         if(frame_id % FRAME_PER_SEQ == 0){
             frame_id = frame_id % FRAME_PER_SEQ;
-            seq_id++;
+            seq_id=seq_id+2;
             seq_id = seq_id % SEQ_NUM; 
         }
 
